@@ -1,0 +1,8 @@
+https://github.com/shader-slang/slang/releases/tag/v2025.19.1
+
+slang.dll
+slang.slang
+gfx.dll
+gfx.slang
+slang-glslang.dll
+slang-glsl-module.dll

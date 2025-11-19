@@ -1,4 +1,5 @@
 build/
-Dependencies/bin/
-Dependencies/include/
-Dependencies/lib/
+Dependencies/bin/slang/*.dll
+Dependencies/bin/slang/*.slang
+Dependencies/include/slang/*.h
+Dependencies/lib/slang/*.lib

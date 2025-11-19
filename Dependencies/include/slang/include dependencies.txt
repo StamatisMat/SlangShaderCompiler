@@ -1,0 +1,9 @@
+https://github.com/shader-slang/slang/releases/tag/v2025.19.1
+
+slang.h
+slang-com-helper.h
+slang-com-ptr.h
+....
+slang-torch-prelude.h
+
+Just get slang/include

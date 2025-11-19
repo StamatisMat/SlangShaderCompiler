@@ -1,0 +1,4 @@
+https://github.com/shader-slang/slang/releases/tag/v2025.19.1
+
+gfx.lib
+slang.lib
