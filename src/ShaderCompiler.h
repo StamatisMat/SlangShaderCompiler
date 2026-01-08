@@ -16,7 +16,7 @@ struct ShaderResourceBinding
     ResourceType resourceType;
     uint32_t binding;   // Vulkan binding or D3D register
     uint32_t set;       // Vulkan set or D3D space
-    uint32_t count;
+    uint32_t count = 1;
 
     std::string name;
     // Then have separate converters:

@@ -194,6 +194,8 @@ std::vector<ShaderOutput> SlangCompiler::compile(const std::string& source,
 
         // Store output
         ShaderOutput output;
+        // only store resource bindings on first output
+		output.resourceBindings = extractResourceBindings(linkedProgram.get());
         output.target = target;
         output.entryPointName = entryPoints[i];
         const uint8_t* data = static_cast<const uint8_t*>(codeBlob->getBufferPointer());
@@ -208,18 +210,21 @@ std::vector<ShaderOutput> SlangCompiler::compile(const std::string& source,
 std::vector<ShaderResourceBinding> SlangCompiler::extractResourceBindings(slang::IComponentType* program) {
     std::vector<ShaderResourceBinding> bindings;
 
-    Slang::ComPtr<slang::ProgramLayout> programLayout;
+	if (!program) {
+        throw std::runtime_error("Invalid program for resource binding extraction");
+    }
+    slang::ProgramLayout* programLayout{ program->getLayout() };
     if (!programLayout) {
         throw std::runtime_error("Failed to get program layout for resource binding extraction");
     }
-    Slang::ComPtr<slang::TypeLayoutReflection> globalParams{ programLayout->getGlobalParamsTypeLayout() };
+    slang::TypeLayoutReflection* globalParams{ programLayout->getGlobalParamsTypeLayout() };
 
     uint32_t fieldCount = globalParams->getFieldCount();
 
     for (uint32_t i{ 0 }; i < fieldCount; ++i) {
-        Slang::ComPtr<slang::VariableLayoutReflection> field{ globalParams->getFieldByIndex(i) };
-        Slang::ComPtr<slang::TypeLayoutReflection> typeLayout{ field->getTypeLayout() };
-        Slang::ComPtr<slang::TypeReflection> type{ typeLayout->getType() };
+        slang::VariableLayoutReflection* field{ globalParams->getFieldByIndex(i) };
+        slang::TypeLayoutReflection* typeLayout{ field->getTypeLayout() };
+        slang::TypeReflection* type{ typeLayout->getType() };
         ShaderResourceBinding binding;
         binding.name = field->getName();
 
@@ -256,7 +261,7 @@ std::vector<ShaderResourceBinding> SlangCompiler::extractResourceBindings(slang:
                 (shape & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_TEXTURE_3D ||
                 (shape & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_TEXTURE_CUBE) {
                 if (access == SlangResourceAccess::SLANG_RESOURCE_ACCESS_READ_WRITE) {
-                    binding.resourceType = ShaderResourceBinding::ResourceType::Texture;
+                    binding.resourceType = ShaderResourceBinding::ResourceType::UAV;
                     binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::UnorderedAccess));
                     binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::UnorderedAccess));
                 }
@@ -266,7 +271,18 @@ std::vector<ShaderResourceBinding> SlangCompiler::extractResourceBindings(slang:
                     binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::ShaderResource));
                 }
                 bindings.push_back(binding);
+				auto samplerOffset = field->getOffset(slang::ParameterCategory::SamplerState);
+                if (samplerOffset >= 0) {
+                    ShaderResourceBinding samplerBinding;
+                    samplerBinding.name = binding.name + "_sampler";
+                    samplerBinding.resourceType = ShaderResourceBinding::ResourceType::Sampler;
+                    samplerBinding.binding = static_cast<uint32_t>(samplerOffset);
+                    samplerBinding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::SamplerState));
+                    //samplerBinding.count = 1;
+					bindings.push_back(samplerBinding);
+                }
             }
+            break;
         }
         case slang::TypeReflection::Kind::SamplerState:
         {
@@ -280,4 +296,5 @@ std::vector<ShaderResourceBinding> SlangCompiler::extractResourceBindings(slang:
             break;
         }
     }
+    return bindings;
 }

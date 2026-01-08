@@ -50,6 +50,56 @@ void fileExample(SlangCompiler& compiler, const std::vector<std::string>& entryP
     stringExample(compiler, source, entryPoints, path);
 }
 
+void TestShaderReflection(SlangCompiler& compiler, const std::string& source, const std::vector<std::string>& entryPoints, const std::string& path = "") 
+{
+    std::vector<ShaderOutput> shaderOutputs = compiler.compileToHLSL(source, entryPoints, path);
+    ShaderOutput shaderOutput{ shaderOutputs.at(0) };
+
+    // 2. Print extracted bindings
+    std::cout << "=== Texture Shader Reflection ===" << std::endl;
+    for (const auto& binding : shaderOutput.resourceBindings)
+    {
+        std::cout << "Name: " << binding.name
+            << ", Type: " << (int)binding.resourceType
+            << ", Binding: " << binding.binding
+            << ", Space: " << binding.set
+            << ", Count: " << binding.count << std::endl;
+    }
+
+    // 3. Verify expected bindings
+    assert(shaderOutput.resourceBindings.size() == 6); // b0, b1, b2, t0, s0
+
+    // Find each binding and verify
+    auto findBinding = [&](const std::string& name) {
+        auto it = std::find_if(shaderOutput.resourceBindings.begin(),
+            shaderOutput.resourceBindings.end(),
+            [&](const auto& b) { return b.name == name; });
+        assert(it != shaderOutput.resourceBindings.end());
+        return *it;
+        };
+
+    auto globals = findBinding("Globals");
+    assert(globals.resourceType == ShaderResourceBinding::ResourceType::ConstantBuffer);
+    assert(globals.binding == 0 && globals.set == 0);
+
+    auto colors = findBinding("FragmentColors");
+    assert(colors.resourceType == ShaderResourceBinding::ResourceType::ConstantBuffer);
+    assert(colors.binding == 1 && colors.set == 0);
+
+    auto camera = findBinding("FragmentCameraPos");
+    assert(camera.resourceType == ShaderResourceBinding::ResourceType::ConstantBuffer);
+    assert(camera.binding == 2 && camera.set == 0);
+
+    auto texture = findBinding("TextureSampler");
+    assert(texture.resourceType == ShaderResourceBinding::ResourceType::Texture);
+    assert(texture.binding == 0 && texture.set == 0);
+
+    auto sampler = findBinding("TextureSampler_sampler");
+    assert(sampler.resourceType == ShaderResourceBinding::ResourceType::Sampler);
+    assert(sampler.binding == 0 && sampler.set == 0);
+
+    std::cout << "All texture shader reflection tests passed!" << std::endl;
+}
 
 int main(int argc, char* argv[])
 {
@@ -150,8 +200,24 @@ int main(int argc, char* argv[])
             std::cerr << "Error: " << e.what() << "\n";
             ++examplesFailed;
         }
+        try
+        {
+			std::ifstream stream(testFilePath, std::ios::in);
+			if (!stream.is_open()) {
+				throw std::runtime_error("Failed to open shader file. Check filename");
+			}
+			std::string source = std::string{(std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>()};
+            TestShaderReflection(compiler, source, entryPoints, testFilePath);
+
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error: " << e.what() << "\n";
+            ++examplesFailed;
+        }
     }
     std::cout << "Summary: " << examplesFailed << " example(s) failed.\n";
     if (examplesFailed > 0) return 1;
     return 0;
 }
+
