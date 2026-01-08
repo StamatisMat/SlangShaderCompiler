@@ -9,11 +9,27 @@
 #include <string>
 #include <vector>
 
+struct ShaderResourceBinding
+{
+    enum class ResourceType { ConstantBuffer, StructuredBuffer, Texture, Sampler, UAV };
+
+    ResourceType resourceType;
+    uint32_t binding;   // Vulkan binding or D3D register
+    uint32_t set;       // Vulkan set or D3D space
+    uint32_t count;
+
+    std::string name;
+    // Then have separate converters:
+    // - ToD3D12RootSignature()
+    // - ToVulkanDescriptorSetLayout()
+};
+
 struct ShaderOutput
 {
     SlangCompileTarget target = SLANG_TARGET_UNKNOWN;
     std::string entryPointName;
     std::vector<uint8_t> binaryData; // For SPIR-V and text formats
+    std::vector<ShaderResourceBinding> resourceBindings;
 
     std::string asText() const
     {
@@ -58,5 +74,5 @@ private:
         SlangCompileTarget target, 
         const std::string& path);
 
-    SlangStage getSlangStage(const std::string& stage);
+    std::vector<ShaderResourceBinding> extractResourceBindings(slang::IComponentType* program);
 };

@@ -205,3 +205,79 @@ std::vector<ShaderOutput> SlangCompiler::compile(const std::string& source,
 
     return outputs;
 }
+std::vector<ShaderResourceBinding> SlangCompiler::extractResourceBindings(slang::IComponentType* program) {
+    std::vector<ShaderResourceBinding> bindings;
+
+    Slang::ComPtr<slang::ProgramLayout> programLayout;
+    if (!programLayout) {
+        throw std::runtime_error("Failed to get program layout for resource binding extraction");
+    }
+    Slang::ComPtr<slang::TypeLayoutReflection> globalParams{ programLayout->getGlobalParamsTypeLayout() };
+
+    uint32_t fieldCount = globalParams->getFieldCount();
+
+    for (uint32_t i{ 0 }; i < fieldCount; ++i) {
+        Slang::ComPtr<slang::VariableLayoutReflection> field{ globalParams->getFieldByIndex(i) };
+        Slang::ComPtr<slang::TypeLayoutReflection> typeLayout{ field->getTypeLayout() };
+        Slang::ComPtr<slang::TypeReflection> type{ typeLayout->getType() };
+        ShaderResourceBinding binding;
+        binding.name = field->getName();
+
+        // Get binding information
+        slang::TypeReflection::Kind kind = type->getKind();
+        switch (kind)
+        {
+        case slang::TypeReflection::Kind::ConstantBuffer:
+        {
+            binding.resourceType = ShaderResourceBinding::ResourceType::ConstantBuffer;
+            binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::ConstantBuffer));
+            binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::ConstantBuffer));
+            bindings.push_back(binding);
+            break;
+        }
+        case slang::TypeReflection::Kind::Resource:
+        {
+            SlangResourceShape shape = type->getResourceShape();
+            SlangResourceAccess access = type->getResourceAccess();
+            if ((shape & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_STRUCTURED_BUFFER) {
+                if (access == SlangResourceAccess::SLANG_RESOURCE_ACCESS_READ_WRITE) {
+                    binding.resourceType = ShaderResourceBinding::ResourceType::UAV;
+                    binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::UnorderedAccess));
+                    binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::UnorderedAccess));
+                }
+                else {
+                    binding.resourceType = ShaderResourceBinding::ResourceType::StructuredBuffer;
+                    binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::ShaderResource));
+                    binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::ShaderResource));
+                }
+                bindings.push_back(binding);
+            }
+            else if ((shape & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_TEXTURE_2D ||
+                (shape & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_TEXTURE_3D ||
+                (shape & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_TEXTURE_CUBE) {
+                if (access == SlangResourceAccess::SLANG_RESOURCE_ACCESS_READ_WRITE) {
+                    binding.resourceType = ShaderResourceBinding::ResourceType::Texture;
+                    binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::UnorderedAccess));
+                    binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::UnorderedAccess));
+                }
+                else {
+                    binding.resourceType = ShaderResourceBinding::ResourceType::Texture;
+                    binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::ShaderResource));
+                    binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::ShaderResource));
+                }
+                bindings.push_back(binding);
+            }
+        }
+        case slang::TypeReflection::Kind::SamplerState:
+        {
+            binding.resourceType = ShaderResourceBinding::ResourceType::Sampler;
+            binding.binding = static_cast<uint32_t>(field->getOffset(slang::ParameterCategory::SamplerState));
+            binding.set = static_cast<uint32_t>(field->getBindingSpace(slang::ParameterCategory::SamplerState));
+            bindings.push_back(binding);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+}
