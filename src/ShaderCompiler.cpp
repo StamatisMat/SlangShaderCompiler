@@ -15,7 +15,88 @@ SlangCompiler::~SlangCompiler()
     }
     */
 }
+// If you wish to go through the hassle of getting spirv-cross dependencies on your project,
+// Here's a way to convert SPIR-V binary to OpenGL GLSL text using spirv-cross.
+// It provides a way to convert Slang-generated SPIR-V to GLSL for OpenGL applications.
+// Slang-generated SpirV and GLSL is only Vulkan "flavoured", so for more complex shaders
+// than a simple blinn phong, this is needed.
 
+// A tip for including spirv-cross in your project:
+// a. don't
+// b. If you didn't do a., don't build spirv-cross as a separate static library, instead include it as source files (check uminode/CollisionEngine/CMakeLists.txt for guidance)
+// c. If you didn't do either a or b, good luck. That said if you figure it out, please raise a PR.
+#ifdef SPIRV_CROSS_H
+std::string GLSLShader::ConvertSPIRVToGLSL(
+	const std::vector<uint8_t>& spirvBytes,
+	bool isVertexShader
+) {
+	// Validate SPIR-V size
+	if (spirvBytes.empty() || spirvBytes.size() % 4 != 0) {
+		throw std::runtime_error("Invalid SPIR-V: empty or size not multiple of 4");
+	}
+
+	// Convert byte array to uint32_t array (SPIR-V uses 32-bit words)
+	std::vector<uint32_t> spirv(spirvBytes.size() / 4);
+	std::memcpy(spirv.data(), spirvBytes.data(), spirvBytes.size());
+
+	// Create SPIRV-Cross compiler
+	spirv_cross::CompilerGLSL glsl(std::move(spirv));
+
+	spirv_cross::ShaderResources resources = glsl.get_shader_resources();
+	const std::string stagePrefix = isVertexShader ? "vs_" : "fs_";
+	for (auto& resource : resources.storage_buffers) {
+		uint32_t set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		uint32_t binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+		std::string uniqueName = stagePrefix + resource.name + "_b" + std::to_string(binding);
+		glsl.set_name(resource.id, uniqueName);
+		glsl.set_name(resource.base_type_id, uniqueName + "_type");
+#ifdef _DEBUG
+		std::cout << "SSBO: " << resource.name << " - set=" << set << ", binding = " << binding << std::endl;
+#endif
+		// unset descriptor set as we're using OpenGL
+		glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+	}
+	for (auto& resource : resources.uniform_buffers) {
+		uint32_t set = glsl.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		uint32_t binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+		std::string uniqueName = stagePrefix + resource.name + "_b" + std::to_string(binding);
+		glsl.set_name(resource.id, uniqueName);
+		glsl.set_name(resource.base_type_id, uniqueName + "_type");
+#ifdef _DEBUG
+		std::cout << "UBO: " << resource.name << " - set=" << set << ", binding = " << binding << std::endl;
+#endif
+		// unset descriptor set as we're using OpenGL
+		glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+	}
+	for (auto& resource : resources.sampled_images) {
+		uint32_t binding = glsl.get_decoration(resource.id, spv::DecorationBinding);
+		std::string uniqueName = stagePrefix + resource.name + "_b" + std::to_string(binding);
+		glsl.set_name(resource.id, uniqueName);
+		glsl.unset_decoration(resource.id, spv::DecorationDescriptorSet);
+	}
+
+	// Configure OpenGL-specific compiler options
+	spirv_cross::CompilerGLSL::Options options;
+	options.version = 460;                      
+	options.es = false;                         
+	options.enable_420pack_extension = true;    
+	options.vertex.fixup_clipspace = false;     
+	options.vertex.flip_vert_y = false;         
+
+	options.vulkan_semantics = false;
+	options.vertex.support_nonzero_base_instance = true;
+
+	glsl.set_common_options(options);
+
+	std::string glslSource = glsl.compile();
+
+	std::cout << "GLSLShader: " << (isVertexShader ? "Vertex" : "Fragment")
+		<< " shader converted successfully (" << glslSource.size()
+		<< " bytes)" << std::endl;
+
+	return glslSource;
+}
+#endif
 // Compile to GLSL text - returns all entry points
 std::vector<ShaderOutput> SlangCompiler::compileToGLSL(const std::string& source,
     const std::vector<std::string>& entryPoints, const std::string& path)
